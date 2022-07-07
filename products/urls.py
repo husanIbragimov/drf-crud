@@ -13,6 +13,8 @@ urlpatterns = [
     path('destroy/<int:pk>/', views.ProductDestroyAPIView.as_view()),
     path('retrieve-destroy/<int:pk>/', views.ProductRetrieveDestroyAPIView.as_view()),
     path('rud/<int:pk>/', views.ProductRetrieveUpdateDestroyAPIView.as_view(), name='rud-view'),
+    # other project
+    path('daily-products/', views.DailyProduct.as_view()),
     # mixins
     path('my-mixin-list/', views.MyListMixin.as_view()),
     # Token

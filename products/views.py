@@ -1,10 +1,12 @@
-from django.db.models import Q
+from django.db.models import Q, Count
+from django.db.models.functions import TruncDay
 from rest_framework import generics, status, mixins, permissions, authentication, viewsets
 from rest_framework.response import Response
 from .permissions import IsOwnerOrReadOnly
 from .serializers import ProductSerializer
 from django.http import JsonResponse
 from .models import Product
+from .paginator import CustomPagination
 
 
 # CBV -- > class Based View
@@ -14,6 +16,16 @@ from .models import Product
 class ProductListAPIView(generics.ListAPIView):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+    # permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = [authentication.TokenAuthentication]
+
+    def get_queryset(self, *args, **kwargs):
+        qs = super().get_queryset()
+        request = self.request
+        user = request.user
+        if not user.is_authenticated:
+            return Product.objects.none()
+        return qs.filter(user=request.user)
 
 
 # POST
@@ -36,6 +48,7 @@ class ProductListCreateAPIView(generics.ListCreateAPIView):
     serializer_class = ProductSerializer
     authentication_classes = [authentication.TokenAuthentication, authentication.SessionAuthentication]
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = CustomPagination
 
     def perform_create(self, serializer):
         print(serializer.validated_data)
@@ -46,7 +59,7 @@ class ProductListCreateAPIView(generics.ListCreateAPIView):
         serializer.save(content=content)
 
     def get_queryset(self):
-        qs = super().get_queryset()
+        qs = super().get_queryset().filter(user=self.request.user)
         # q = self.request.GET.get('q')
         q = self.request.query_params.get('q')
         c = self.request.query_params.get('c')
@@ -124,3 +137,35 @@ class MyListMixin(mixins.ListModelMixin, generics.GenericAPIView):
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
+
+
+class DailyProduct(generics.ListAPIView):
+    queryset = Product.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super(DailyProduct, self).get_queryset()
+        return qs
+
+    def filter_qs(self, date):
+        return self.get_queryset().filter(created_at__contains=date)
+
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+
+        lst = qs.annotate(date=TruncDay('created_at')).values('date').annotate(count=Count('id'))
+        data = {
+            'count': lst.count(),
+            'results': []
+        }
+
+        for i in lst:
+            data.get('results').append({
+                'date': i.get('date'),
+                'count': i.get('count'),
+                'products': [
+                    {'id': j.id, 'title': j.title} for j in self.filter_qs(i.get('date'))
+                ]
+            })
+
+        return Response(data)
